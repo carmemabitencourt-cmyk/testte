@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from difflib import SequenceMatcher
-from typing import Iterable, List, Set
+from typing import Iterable
 
 from src.models import Lead
 
@@ -13,11 +13,14 @@ from src.models import Lead
 class Deduplicator:
     """Deduplica leads com base em telefone e similaridade de nome."""
 
-    existing_phones: Set[str]
+    existing_phones: set[str]
 
-    def deduplicate(self, leads: Iterable[Lead]) -> List[Lead]:
+    def deduplicate(self, leads: Iterable[Lead]) -> list[Lead]:
         """Remove leads duplicados."""
-        deduplicated: List[Lead] = []
+        deduplicated: list[Lead] = []
+        # Agrupa leads por cidade para otimizar a comparação de similaridade de nome
+        # Cada entrada contém (nome_lowercased, lead)
+        by_city: dict[str, list[tuple[str, Lead]]] = {}
         removed = 0
         normalized_existing = {self._normalize_phone(p) for p in self.existing_phones}
 
@@ -27,11 +30,17 @@ class Deduplicator:
                 removed += 1
                 continue
 
-            if self._is_similar_name(lead, deduplicated):
+            # Otimização: Só compara similaridade com leads da mesma cidade
+            # e evita chamadas repetidas a .lower()
+            name_lower = lead.nome.lower()
+            city_leads = by_city.get(lead.cidade, [])
+            if self._is_similar_name(name_lower, city_leads):
                 removed += 1
                 continue
 
             deduplicated.append(lead)
+            by_city.setdefault(lead.cidade, []).append((name_lower, lead))
+
             if normalized_phone:
                 normalized_existing.add(normalized_phone)
 
@@ -48,11 +57,13 @@ class Deduplicator:
         return digits
 
     @staticmethod
-    def _is_similar_name(candidate: Lead, leads: Iterable[Lead]) -> bool:
-        for lead in leads:
+    def _is_similar_name(candidate_name_lower: str, city_leads: list[tuple[str, Lead]]) -> bool:
+        """Verifica se existe algum lead na lista com nome similar."""
+        for lead_name_lower, _ in city_leads:
+            # SequenceMatcher é O(n), então reduzir o número de chamadas é crítico
             ratio = SequenceMatcher(
-                None, candidate.nome.lower(), lead.nome.lower()
+                None, candidate_name_lower, lead_name_lower
             ).ratio()
-            if ratio >= 0.8 and candidate.cidade == lead.cidade:
+            if ratio >= 0.8:
                 return True
         return False
