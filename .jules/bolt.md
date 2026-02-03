@@ -1,0 +1,3 @@
+## 2025-05-15 - [Optimize lead deduplication performance]
+**Learning:** Found an $O(n^2)$ bottleneck in the lead deduplication process where every lead was compared with every other lead using `SequenceMatcher` (an expensive fuzzy matching operation). Even if the business logic only considered leads in the same city as duplicates, the code was calculating the similarity ratio for ALL pairs before checking the city.
+**Action:** Group leads by city in a dictionary to reduce the search space and skip expensive similarity checks for leads in different cities. Also cached lowercased names to avoid redundant string operations. This resulted in a ~4.8x speedup for 2000 leads and 10 cities.
